@@ -12,14 +12,15 @@
 {% if rows %}
 <div class="panel table-wrap">
   <table>
-    <thead><tr>{% if review %}<th scope="col">作者</th>{% endif %}<th scope="col">類別</th><th scope="col">標題</th>{% if not review %}<th scope="col">審查狀態</th>{% endif %}</tr></thead>
+    <thead><tr>{% if review %}<th scope="col">作者</th>{% endif %}<th scope="col">類別</th><th scope="col">標題</th>{% if review %}<th scope="col">送審時間（台灣）</th><th scope="col">等待時間</th>{% else %}<th scope="col">審查狀態</th>{% endif %}</tr></thead>
     <tbody>
     {% for item in rows %}
       <tr>
         {% if review %}<td>{{ item.username }}</td>{% endif %}
         <td>{{ item.category or '未分類' }}</td>
         <td><a href="{{ url_for('review_detail' if review else 'draft_detail', draft_id=item.id) }}">{{ item.title or '未命名草稿' }}</a></td>
-        {% if not review %}<td><span class="badge {{ item.status }}">{{ statuses[item.status] }}</span></td>{% endif %}
+        {% if review %}<td>{{ item.sent_label }}</td><td>{{ item.wait_label }}</td>
+        {% else %}<td><span class="badge {{ item.status }}">{{ statuses[item.status] }}</span></td>{% endif %}
       </tr>
     {% endfor %}
     </tbody>

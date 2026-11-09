@@ -21,6 +21,7 @@
     {% endif %}
     <button class="wide">{{ '註冊' if register else '登入' }}</button>
   </form>
+  {% if not register %}<p><a href="{{ url_for('forgot_password') }}">忘記密碼</a></p>{% endif %}
   <p class="auth-switch">
     {% if register %}已有帳號？ <a href="{{ url_for('login') }}">返回登入</a>
     {% else %}還沒有帳號？ <a href="{{ url_for('register') }}">註冊成為作者</a>{% endif %}

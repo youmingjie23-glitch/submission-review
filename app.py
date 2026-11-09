@@ -2,7 +2,9 @@ import os
 import re
 import secrets
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from functools import wraps
+from hashlib import sha256
 from pathlib import Path
 
 import click
@@ -14,6 +16,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 CATEGORIES = ('小說', '散文', '詩歌', '評論', '其他')
 STATUSES = {'draft': '編輯中', 'pending': '審查中', 'approved': '已通過'}
+TAIPEI = timezone(timedelta(hours=8))
 
 
 def create_app(config=None):
@@ -37,11 +40,23 @@ def create_app(config=None):
 
     with app.app_context():
         db().executescript(schema)
+        migrate_db()
 
     @app.before_request
     def prepare_request():
         user_id = session.get('user_id')
-        g.user = db().execute('SELECT id, username, role FROM users WHERE id = ?', (user_id,)).fetchone() if user_id else None
+        g.user = None
+        if user_id is not None:
+            user = db().execute(
+                'SELECT id, username, role, session_version, recovery_hash FROM users WHERE id = ?',
+                (user_id,),
+            ).fetchone()
+            # 重設密碼會增加登入版本，因此以前的登入 Cookie 不能繼續使用。
+            if user and session.get('session_version', 0) == user['session_version']:
+                g.user = user
+            else:
+                session.clear()
+        # 所有修改資料的表單都必須帶有這個瀏覽器工作階段的 CSRF token。
         token = session.setdefault('csrf', secrets.token_hex(32))
         if request.method == 'POST' and not secrets.compare_digest(
             request.form.get('csrf', '').encode(), token.encode()
@@ -103,9 +118,76 @@ def create_app(config=None):
             if user and len(password) <= 128 and check_password_hash(user['password_hash'], password):
                 session.clear()
                 session['user_id'] = user['id']
+                session['session_version'] = user['session_version']
+                if user['recovery_hash'] is None:
+                    flash('請從上方「復原碼」設定一次性復原碼，以便忘記密碼時使用。')
                 return redirect(url_for('review_list' if user['role'] == 'editor' else 'draft_list'), 303)
             return render_template('auth.html', error='帳號或密碼錯誤。', username=username), 422
         return render_template('auth.html', username=username)
+
+    @app.cli.command('issue-recovery-code')
+    @click.argument('username')
+    def issue_recovery_code(username):
+        # 本機管理者在確認身分後，可替尚未保存復原碼的舊帳號產生新碼。
+        code = secrets.token_hex(16)
+        with db() as connection:
+            updated = connection.execute(
+                'UPDATE users SET recovery_hash = ? WHERE username = ?',
+                (recovery_digest(code), username),
+            )
+            if updated.rowcount != 1:
+                raise click.ClickException('找不到這個帳號。')
+        click.echo(f'一次性復原碼：{code}')
+
+    @app.route('/account/recovery', methods=['GET', 'POST'])
+    def recovery_settings():
+        if g.user is None:
+            return redirect(url_for('login'))
+        if request.method == 'POST':
+            password = request.form.get('password', '')
+            user = db().execute('SELECT password_hash FROM users WHERE id = ?', (g.user['id'],)).fetchone()
+            if len(password) > 128 or not check_password_hash(user['password_hash'], password):
+                return recovery_page('settings', error='目前密碼錯誤。'), 422
+            code = secrets.token_hex(16)
+            change(
+                'UPDATE users SET recovery_hash = ? WHERE id = ? AND password_hash = ?',
+                (recovery_digest(code), g.user['id'], user['password_hash']),
+            )
+            return recovery_page('code', code=code)
+        return recovery_page('settings')
+
+    @app.route('/forgot-password', methods=['GET', 'POST'])
+    def forgot_password():
+        if g.user:
+            return redirect(url_for('recovery_settings'))
+        if request.method == 'POST':
+            username = request.form.get('username', '').strip()
+            code = request.form.get('code', '').strip().lower()
+            password = request.form.get('password', '')
+            error = account_error(username, password)
+            if not error and password != request.form.get('confirmation', ''):
+                error = '兩次輸入的密碼不一致。'
+            if not error and re.fullmatch(r'[0-9a-f]{32}', code):
+                digest = recovery_digest(code)
+                with db() as connection:
+                    user = connection.execute(
+                        'SELECT id, recovery_hash FROM users WHERE username = ?', (username,)
+                    ).fetchone()
+                    if user and user['recovery_hash'] and secrets.compare_digest(user['recovery_hash'], digest):
+                        # 同一筆更新同時換密碼、作廢復原碼和舊登入，避免同一組碼用兩次。
+                        updated = connection.execute(
+                            'UPDATE users SET password_hash = ?, recovery_hash = NULL, '
+                            'session_version = session_version + 1 WHERE id = ? AND recovery_hash = ?',
+                            (generate_password_hash(password), user['id'], digest),
+                        ).rowcount
+                    else:
+                        updated = 0
+                if updated:
+                    session.clear()
+                    flash('密碼已重設，請重新登入並產生新的復原碼。')
+                    return redirect(url_for('login'), 303)
+            return recovery_page('reset', error=error or '帳號或復原碼錯誤，或復原碼已使用。', username=username), 422
+        return recovery_page('reset')
 
     @app.post('/logout')
     def logout():
@@ -163,10 +245,12 @@ def create_app(config=None):
             error = '送審前請填完類別、標題與文章內容。'
         if error:
             return render_template('draft.html', item={**dict(item), **dict(values)}, error=error), 422
+        # 每次送審重新計時，退回後修改草稿的時間不算進本輪等待。
         change(
-            "UPDATE drafts SET category = ?, title = ?, body = ?, status = 'pending', version = version + 1 "
+            "UPDATE drafts SET category = ?, title = ?, body = ?, submitted_at = ?, status = 'pending', version = version + 1 "
             "WHERE id = ? AND author_id = ? AND status = 'draft' AND version = ?",
-            (values['category'], values['title'], values['body'], draft_id, g.user['id'], version),
+            (values['category'], values['title'], values['body'], datetime.now(timezone.utc).isoformat(),
+             draft_id, g.user['id'], version),
         )
         flash('已送出，等待編輯審查。')
         return redirect(url_for('draft_list'), 303)
@@ -187,9 +271,15 @@ def create_app(config=None):
     def review_list():
         rows = db().execute(
             "SELECT drafts.*, users.username FROM drafts JOIN users ON users.id = drafts.author_id "
-            "WHERE drafts.status = 'pending' ORDER BY drafts.id"
+            "WHERE drafts.status = 'pending' ORDER BY drafts.submitted_at IS NOT NULL, drafts.submitted_at, drafts.id"
         )
-        return render_template('list.html', rows=rows.fetchall(), review=True)
+        # 舊稿件沒有歷史時間，排在已知時間之前，並明確標示。
+        now = datetime.now(timezone.utc)
+        return render_template(
+            'list.html', review=True, rows=[
+                {**dict(row), **submission_time(row['submitted_at'], now)} for row in rows
+            ],
+        )
 
     @app.get('/review/<int:draft_id>')
     @requires('editor')
@@ -206,13 +296,23 @@ def create_app(config=None):
     @requires('editor')
     def decide(draft_id, action):
         status = {'approve': 'approved', 'return': 'draft'}.get(action)
-        item = db().execute('SELECT * FROM drafts WHERE id = ?', (draft_id,)).fetchone()
+        item = db().execute(
+            'SELECT drafts.*, users.username FROM drafts JOIN users ON users.id = drafts.author_id '
+            'WHERE drafts.id = ?', (draft_id,)
+        ).fetchone()
         if status is None or item is None:
             abort(404)
         version = current_version(item, 'pending')
+        reason = request.form.get('reason', '').strip() if action == 'return' else ''
+        if action == 'return' and not 1 <= len(reason) <= 1000:
+            return render_template(
+                'draft.html', item=item, review=True, reason=reason,
+                error='退回稿件時，請填寫 1 到 1,000 字的原因。',
+            ), 422
+        # 同一條 SQL 一起寫入退稿原因和狀態。版本條件可阻擋過期的審查頁。
         change(
-            "UPDATE drafts SET status = ?, version = version + 1 "
-            "WHERE id = ? AND status = 'pending' AND version = ?", (status, draft_id, version)
+            "UPDATE drafts SET status = ?, return_reason = ?, version = version + 1 "
+            "WHERE id = ? AND status = 'pending' AND version = ?", (status, reason, draft_id, version)
         )
         flash('稿件已通過。' if action == 'approve' else '稿件已退回，作者可修改後重新送審。')
         return redirect(url_for('review_list'), 303)
@@ -220,7 +320,51 @@ def create_app(config=None):
     return app
 
 
+def migrate_db():
+    # CREATE TABLE IF NOT EXISTS 不會替現有資料表增加欄位。
+    # 先取得寫入鎖，再檢查及新增欄位，讓更新可以重跑且保留舊資料。
+    columns = {
+        'users': {'recovery_hash': 'TEXT', 'session_version': 'INTEGER NOT NULL DEFAULT 0'},
+        'drafts': {'submitted_at': 'TEXT', 'return_reason': "TEXT NOT NULL DEFAULT ''"},
+    }
+    with db() as connection:
+        connection.execute('BEGIN IMMEDIATE')
+        for table, additions in columns.items():
+            existing = {row['name'] for row in connection.execute(f'PRAGMA table_info({table})')}
+            for name, definition in additions.items():
+                if name not in existing:
+                    connection.execute(f'ALTER TABLE {table} ADD COLUMN {name} {definition}')
+
+
+def submission_time(value, now):
+    if value is None:
+        return dict(sent_label='舊資料未記錄', wait_label='無法計算')
+    sent_at = datetime.fromisoformat(value)
+    minutes = max(0, int((now - sent_at).total_seconds()) // 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    if days:
+        wait_label = f'{days} 天 {hours} 小時'
+    elif hours:
+        wait_label = f'{hours} 小時 {minutes} 分鐘'
+    else:
+        wait_label = f'{minutes} 分鐘' if minutes else '未滿 1 分鐘'
+    return dict(sent_label=sent_at.astimezone(TAIPEI).strftime('%Y/%m/%d %H:%M'), wait_label=wait_label)
+
+
+def recovery_digest(code):
+    # 復原碼由系統隨機產生，資料庫只存 SHA-256 摘要。
+    return sha256(code.encode()).hexdigest()
+
+
+def recovery_page(mode, **values):
+    response = current_app.make_response(render_template('recovery.html', mode=mode, **values))
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 def db():
+    # 同一個請求共用 SQLite 連線，請求結束後關閉。
     if 'db' not in g:
         g.db = sqlite3.connect(current_app.config['DATABASE'])
         g.db.row_factory = sqlite3.Row
@@ -229,6 +373,7 @@ def db():
 
 
 def requires(role):
+    # 後端檢查角色，直接輸入網址也不能繞過。
     def decorate(view):
         @wraps(view)
         def guarded(*args, **kwargs):
@@ -258,6 +403,7 @@ def add_user(username, password, role):
 
 
 def author_draft(draft_id):
+    # 作者 ID 與稿件 ID 都要符合，避免讀到別人的稿件。
     item = db().execute(
         'SELECT * FROM drafts WHERE id = ? AND author_id = ?', (draft_id, g.user['id'])
     ).fetchone()

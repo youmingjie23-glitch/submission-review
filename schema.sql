@@ -2,6 +2,8 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     username TEXT NOT NULL COLLATE NOCASE UNIQUE,
     password_hash TEXT NOT NULL,
+    recovery_hash TEXT,
+    session_version INTEGER NOT NULL DEFAULT 0,
     role TEXT NOT NULL CHECK (role IN ('author', 'editor'))
 );
 
@@ -12,5 +14,7 @@ CREATE TABLE IF NOT EXISTS drafts (
     title TEXT NOT NULL,
     body TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'pending', 'approved')),
+    submitted_at TEXT,
+    return_reason TEXT NOT NULL DEFAULT '',
     version INTEGER NOT NULL DEFAULT 0
 );

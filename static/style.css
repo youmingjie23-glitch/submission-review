@@ -58,3 +58,6 @@ tr:last-child td { border-bottom: 0; }
   .auth-layout { justify-items: center; align-items: start; padding-top: clamp(9rem, 43vw, 17rem); background-size: 100% auto; background-position: left top; }
   .container { margin-top: 1.25rem; }
 }
+
+.review-reason { white-space: pre-wrap; overflow-wrap: anywhere; }
+.recovery-code { overflow-wrap: anywhere; }

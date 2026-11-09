@@ -8,6 +8,12 @@
     {% if item.status %}<span class="badge {{ item.status }}">{{ statuses[item.status] }}</span>{% endif %}
   </div>
   {% include 'messages.html' %}
+  {% if item.return_reason %}
+  <aside class="notice">
+    <strong>上次退稿原因</strong>
+    <div class="review-reason">{{ item.return_reason }}</div>
+  </aside>
+  {% endif %}
   {% if editable %}
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -37,11 +43,18 @@
   <p class="muted">{% if review %}作者 {{ item.username }} · {% endif %}{{ item.category }}</p>
   <div class="manuscript">{{ item.body }}</div>
   {% if review %}
-  <form method="post" class="actions form-actions">
+  {# 通過和退回各有自己的表單，只有退回時需要填寫原因。 #}
+  <form method="post" action="{{ url_for('decide', draft_id=item.id, action='approve') }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <input type="hidden" name="version" value="{{ item.version }}">
-    <button class="secondary" formaction="{{ url_for('decide', draft_id=item.id, action='return') }}">退回稿件</button>
-    <button formaction="{{ url_for('decide', draft_id=item.id, action='approve') }}">通過稿件</button>
+    <button>通過稿件</button>
+  </form>
+  <form method="post" action="{{ url_for('decide', draft_id=item.id, action='return') }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="version" value="{{ item.version }}">
+    <label for="reason">退稿原因</label>
+    <textarea id="reason" name="reason" rows="4" maxlength="1000" required>{{ reason|default('') }}</textarea>
+    <button class="secondary">退回稿件</button>
   </form>
   {% endif %}
   {% endif %}
