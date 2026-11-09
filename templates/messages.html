@@ -1,0 +1,4 @@
+{% for message in get_flashed_messages() %}
+<p class="notice" role="status">{{ message }}</p>
+{% endfor %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}

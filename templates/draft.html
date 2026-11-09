@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<a href="{{ url_for('review_list' if review else 'draft_list') }}">← {{ '待審查清單' if review else '我的投稿' }}</a>
+{% set editable = not review and (not item.id or item.status == 'draft') %}
+<section class="panel draft-panel">
+  <div class="heading">
+    <h1>{{ ('編輯草稿' if item.id else '新增草稿') if editable else item.title }}</h1>
+    {% if item.status %}<span class="badge {{ item.status }}">{{ statuses[item.status] }}</span>{% endif %}
+  </div>
+  {% include 'messages.html' %}
+  {% if editable %}
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if item.id %}<input type="hidden" name="version" value="{{ item.version }}">{% endif %}
+    <label for="category">類別</label>
+    <select name="category" id="category">
+      <option value="">請選擇</option>
+      {% for category in categories %}<option {% if item.category == category %}selected{% endif %}>{{ category }}</option>{% endfor %}
+    </select>
+    <label for="title">標題</label>
+    <input name="title" id="title" maxlength="120" value="{{ item.title }}">
+    <label for="body">文章內容</label>
+    <textarea name="body" id="body" maxlength="20000" rows="12">{{ item.body }}</textarea>
+    <div class="actions form-actions">
+      <button {% if item.id %}class="secondary"{% endif %}>儲存草稿</button>
+      {% if item.id %}<button formaction="{{ url_for('submit', draft_id=item.id) }}">儲存並送審</button>{% endif %}
+    </div>
+  </form>
+  {% if item.id %}
+  <form method="post" action="{{ url_for('delete', draft_id=item.id) }}" data-confirm="確定刪除這篇草稿？此操作無法復原。">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="version" value="{{ item.version }}">
+    <button class="danger">刪除草稿</button>
+  </form>
+  {% endif %}
+  {% else %}
+  <p class="muted">{% if review %}作者 {{ item.username }} · {% endif %}{{ item.category }}</p>
+  <div class="manuscript">{{ item.body }}</div>
+  {% if review %}
+  <form method="post" class="actions form-actions">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="version" value="{{ item.version }}">
+    <button class="secondary" formaction="{{ url_for('decide', draft_id=item.id, action='return') }}">退回稿件</button>
+    <button formaction="{{ url_for('decide', draft_id=item.id, action='approve') }}">通過稿件</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

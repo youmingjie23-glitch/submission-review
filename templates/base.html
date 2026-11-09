@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}投稿審查{% endblock %} · 文稿室</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script defer src="{{ url_for('static', filename='forms.js') }}"></script>
+</head>
+<body class="{% block page_class %}{% endblock %}">
+  {% if g.user %}
+  <header class="top">
+    <a class="brand" href="{{ url_for('home') }}">文稿室</a>
+    <div class="actions">
+      <span>{{ g.user.username }} · {{ '編輯' if g.user.role == 'editor' else '作者' }}</span>
+      <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="secondary">登出</button>
+      </form>
+    </div>
+  </header>
+  {% endif %}
+  <main class="{% block main_class %}container{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

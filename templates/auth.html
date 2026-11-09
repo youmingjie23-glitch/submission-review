@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block page_class %}auth-page{% endblock %}
+{% block main_class %}auth-layout{% endblock %}
+{% block title %}{{ '作者註冊' if register else '登入' }}{% endblock %}
+{% block content %}
+<section class="panel auth-panel" aria-labelledby="auth-title">
+  <p class="eyebrow">文稿室 · 投稿審查平台</p>
+  <h1 id="auth-title">{{ '建立作者帳號' if register else '登入文稿室' }}</h1>
+  <p class="muted">{{ '建立帳號後即可撰寫草稿與送出投稿。' if register else '作者與編輯共用此登入入口。' }}</p>
+  {% include 'messages.html' %}
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="username">帳號</label>
+    <input id="username" name="username" value="{{ username }}" autocomplete="username" maxlength="24" required>
+    {% if register %}<small>3 到 24 個英文字母、數字或底線。</small>{% endif %}
+    <label for="password">密碼</label>
+    <input id="password" name="password" type="password" autocomplete="{{ 'new-password' if register else 'current-password' }}" maxlength="128" required {% if register %}minlength="8"{% endif %}>
+    {% if register %}
+    <label for="confirmation">確認密碼</label>
+    <input id="confirmation" name="confirmation" type="password" autocomplete="new-password" maxlength="128" required>
+    {% endif %}
+    <button class="wide">{{ '註冊' if register else '登入' }}</button>
+  </form>
+  <p class="auth-switch">
+    {% if register %}已有帳號？ <a href="{{ url_for('login') }}">返回登入</a>
+    {% else %}還沒有帳號？ <a href="{{ url_for('register') }}">註冊成為作者</a>{% endif %}
+  </p>
+</section>
+{% endblock %}

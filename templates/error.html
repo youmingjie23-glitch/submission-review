@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <h1>無法完成操作</h1>
+  <p>{{ message }}</p>
+  <a href="{{ url_for('home') }}">返回首頁</a>
+</section>
+{% endblock %}
