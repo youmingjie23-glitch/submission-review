@@ -2,8 +2,6 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     username TEXT NOT NULL COLLATE NOCASE UNIQUE,
     password_hash TEXT NOT NULL,
-    recovery_hash TEXT,
-    session_version INTEGER NOT NULL DEFAULT 0,
     role TEXT NOT NULL CHECK (role IN ('author', 'editor'))
 );
 
