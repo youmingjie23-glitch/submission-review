@@ -5,7 +5,7 @@
 <section class="panel draft-panel">
   <div class="heading">
     <h1>{{ ('編輯草稿' if item.id else '新增草稿') if editable else item.title }}</h1>
-    {% if item.status %}<span class="badge {{ item.status }}">{{ statuses[item.status] }}</span>{% endif %}
+    {% if item.status %}{% include 'status_badge.html' %}{% endif %}
   </div>
   {% include 'messages.html' %}
   {% if item.return_reason %}
@@ -15,6 +15,7 @@
   </aside>
   {% endif %}
   {% if editable %}
+  {% if item.return_reason %}<p class="muted">這篇稿件已送審並被退回。修改後可按「儲存並送審」再次提交。</p>{% endif %}
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     {% if item.id %}<input type="hidden" name="version" value="{{ item.version }}">{% endif %}

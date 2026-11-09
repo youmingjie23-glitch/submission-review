@@ -61,3 +61,5 @@ tr:last-child td { border-bottom: 0; }
 
 .review-reason { white-space: pre-wrap; overflow-wrap: anywhere; }
 .recovery-code { overflow-wrap: anywhere; }
+
+.returned { background: #fae6df; color: #862d29; }

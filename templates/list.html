@@ -20,7 +20,7 @@
         <td>{{ item.category or '未分類' }}</td>
         <td><a href="{{ url_for('review_detail' if review else 'draft_detail', draft_id=item.id) }}">{{ item.title or '未命名草稿' }}</a></td>
         {% if review %}<td>{{ item.sent_label }}</td><td>{{ item.wait_label }}</td>
-        {% else %}<td><span class="badge {{ item.status }}">{{ statuses[item.status] }}</span></td>{% endif %}
+        {% else %}<td>{% include 'status_badge.html' %}</td>{% endif %}
       </tr>
     {% endfor %}
     </tbody>

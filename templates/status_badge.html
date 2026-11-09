@@ -1,0 +1,6 @@
+{# 退回稿件仍可編輯，用退稿原因區分它和從未送審的草稿。 #}
+{% if item.status == 'draft' and item.return_reason %}
+<span class="badge returned">已退回 · 待修改</span>
+{% else %}
+<span class="badge {{ item.status }}">{{ statuses[item.status] }}</span>
+{% endif %}
